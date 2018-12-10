@@ -1,5 +1,8 @@
 package com.ligoo;
 
+import com.ligoo.connector.http.HttpRequest;
+import com.ligoo.connector.http.HttpResponse;
+
 import java.io.IOException;
 
 /**
@@ -16,7 +19,7 @@ public class StaticResourceProcessor {
      * @param:
      * @return:
      */
-    public void process(Request request, Response response){
+    public void process(HttpRequest request, HttpResponse response){
         try {
             response.sendStaticResource();
         } catch (IOException e) {

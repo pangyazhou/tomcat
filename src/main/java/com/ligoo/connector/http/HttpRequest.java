@@ -1,0 +1,584 @@
+package com.ligoo.connector.http;
+
+import com.ligoo.connector.RequestStream;
+import com.ligoo.util.Enumerator;
+import com.ligoo.util.ParameterMap;
+import com.ligoo.util.RequestUtil;
+
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletInputStream;
+import javax.servlet.http.Cookie;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpSession;
+import java.io.*;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.security.Principal;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+/**
+ * @Author: Administrator
+ * @Date: 2018/12/7 11:16:16
+ * @Description:
+ */
+public class HttpRequest implements HttpServletRequest {
+    private InputStream input;
+    private String contentType;
+    private int contentLength;
+    private InetAddress inetAddress;
+    private String method;
+    private String protocol;
+    private String queryString;
+    private String requestURI;
+    private String serverName;
+    private int serverPort;
+    private Socket socket;
+    private boolean requestedSessionCookie;
+    private String requestedSessionId;
+    private boolean requestedSessionURL;
+
+
+    /**
+     * The set of SimpleDateFormat formats to use in getDateHeader().
+     */
+    protected SimpleDateFormat formats[] = {
+            new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US),
+            new SimpleDateFormat("EEEEEE, dd-MMM-yy HH:mm:ss zzz", Locale.US),
+            new SimpleDateFormat("EEE MMMM d HH:mm:ss yyyy", Locale.US)
+    };
+
+    protected static ArrayList empty = new ArrayList();
+    //请求属性
+    protected HashMap attributes = new HashMap();
+    //用户认证
+    protected String authorization = null;
+    //请求上下文路径
+    protected String contentPath = "";
+    // 请求的cookie
+    protected ArrayList cookies = new ArrayList();
+    // http请求头
+    protected HashMap headers = new HashMap();
+    // 参数集
+    protected ParameterMap parameters = null;
+
+    protected boolean parsed = false;
+    protected String pathInfo = null;
+
+    protected BufferedReader reader = null;
+
+    protected ServletInputStream stream = null;
+
+    public HttpRequest(InputStream input) {
+        this.input = input;
+    }
+
+    public void addHeader(String name, String value){
+        name = name.toLowerCase();
+        synchronized (headers){
+            ArrayList values = (ArrayList) headers.get(name);
+            if(values == null){
+                values = new ArrayList();
+                headers.put(name, values);
+            }
+            values.add(value);
+        }
+    }
+
+    /**
+     * Parse the parameters of this request, if it has not already occurred.
+     * If parameters are present in both the query string and the request
+     * content, they are merged.
+     */
+    protected void parseParameters() {
+        if (parsed)
+            return;
+        ParameterMap results = parameters;
+        if (results == null)
+            results = new ParameterMap();
+        results.setLocked(false);
+        String encoding = getCharacterEncoding();
+        if (encoding == null)
+            encoding = "ISO-8859-1";
+
+        // Parse any parameters specified in the query string
+        String queryString = getQueryString();
+        try {
+            RequestUtil.parseParameters(results, queryString, encoding);
+        }
+        catch (UnsupportedEncodingException e) {
+            ;
+        }
+
+        // Parse any parameters specified in the input stream
+        String contentType = getContentType();
+        if (contentType == null)
+            contentType = "";
+        int semicolon = contentType.indexOf(';');
+        if (semicolon >= 0) {
+            contentType = contentType.substring(0, semicolon).trim();
+        }
+        else {
+            contentType = contentType.trim();
+        }
+        if ("POST".equals(getMethod()) && (getContentLength() > 0)
+                && "application/x-www-form-urlencoded".equals(contentType)) {
+            try {
+                int max = getContentLength();
+                int len = 0;
+                byte buf[] = new byte[getContentLength()];
+                ServletInputStream is = getInputStream();
+                while (len < max) {
+                    int next = is.read(buf, len, max - len);
+                    if (next < 0 ) {
+                        break;
+                    }
+                    len += next;
+                }
+                is.close();
+                if (len < max) {
+                    throw new RuntimeException("Content length mismatch");
+                }
+                RequestUtil.parseParameters(results, buf, encoding);
+            }
+            catch (UnsupportedEncodingException ue) {
+                ;
+            }
+            catch (IOException e) {
+                throw new RuntimeException("Content read fail");
+            }
+        }
+
+        // Store the final results
+        results.setLocked(true);
+        parsed = true;
+        parameters = results;
+    }
+
+    public void addCookie(Cookie cookie){
+        synchronized (cookies){
+            cookies.add(cookie);
+        }
+    }
+
+    public ServletInputStream createInputStream(){
+        return new RequestStream(this);
+    }
+    public InputStream getStream(){
+        return input;
+    }
+
+    public void setContentType(String contentType) {
+        this.contentType = contentType;
+    }
+
+    public void setContentLength(int contentLength) {
+        this.contentLength = contentLength;
+    }
+
+    public void setInet(InetAddress inetAddress) {
+        this.inetAddress = inetAddress;
+    }
+
+    public void setContentPath(String path){
+        if (path == null)
+            this.contentPath = "";
+        else
+            this.contentPath = path;
+    }
+
+    public void setMethod(String method) {
+        this.method = method;
+    }
+
+    public void setProtocol(String protocol) {
+        this.protocol = protocol;
+    }
+
+    public void setQueryString(String queryString) {
+        this.queryString = queryString;
+    }
+
+    public void setRequestURI(String requestURI) {
+        this.requestURI = requestURI;
+    }
+
+    public void setServerName(String serverName) {
+        this.serverName = serverName;
+    }
+
+    public void setServerPort(int serverPort) {
+        this.serverPort = serverPort;
+    }
+
+    public void setSocket(Socket socket) {
+        this.socket = socket;
+    }
+
+    public void setRequestedSessionCookie(boolean requestedSessionCookie) {
+        this.requestedSessionCookie = requestedSessionCookie;
+    }
+
+    public void setRequestedSessionId(String requestedSessionId) {
+        this.requestedSessionId = requestedSessionId;
+    }
+
+    public void setRequestedSessionURL(boolean requestedSessionURL) {
+        this.requestedSessionURL = requestedSessionURL;
+    }
+
+    @Override
+    public String getAuthType() {
+        return null;
+    }
+
+    @Override
+    public Cookie[] getCookies() {
+        synchronized (cookies){
+            if (cookies.size() < 1)
+                return null;
+            Cookie results[] = new Cookie[cookies.size()];
+            return (Cookie[]) cookies.toArray(results);
+        }
+    }
+
+    @Override
+    public long getDateHeader(String name) {
+        String value = getHeader(name);
+        if (value == null)
+            return (-1L);
+
+        // Work around a bug in SimpleDateFormat in pre-JDK1.2b4
+        // (Bug Parade bug #4106807)
+        value += " ";
+
+        // Attempt to convert the date header in a variety of formats
+        for (int i = 0; i < formats.length; i++) {
+            try {
+                Date date = formats[i].parse(value);
+                return (date.getTime());
+            }
+            catch (ParseException e) {
+                ;
+            }
+        }
+        throw new IllegalArgumentException(value);
+    }
+
+    @Override
+    public String getHeader(String name) {
+        name = name.toLowerCase();
+        synchronized (headers) {
+            ArrayList values = (ArrayList) headers.get(name);
+            if (values != null)
+                return ((String) values.get(0));
+            else
+                return null;
+        }
+    }
+
+    @Override
+    public Enumeration getHeaders(String name) {
+        name = name.toLowerCase();
+        synchronized (headers) {
+            ArrayList values = (ArrayList) headers.get(name);
+            if (values != null)
+                return (new Enumerator(values));
+            else
+                return (new Enumerator(empty));
+        }
+    }
+
+    @Override
+    public Enumeration getHeaderNames() {
+        synchronized (headers){
+            return new Enumerator(headers.keySet());
+        }
+    }
+
+    public ServletInputStream getInputStreadm(){
+        if (reader != null){
+            throw new IllegalStateException("getInputStream has been called");
+        }
+        if (stream == null){
+            stream = createInputStream();
+        }
+        return stream;
+    }
+
+    @Override
+    public int getIntHeader(String name) {
+        String value = getHeader(name);
+        if (value == null)
+            return (-1);
+        else
+            return (Integer.parseInt(value));
+    }
+
+    @Override
+    public String getMethod() {
+        return method;
+    }
+
+    @Override
+    public String getPathInfo() {
+        return pathInfo;
+    }
+
+    @Override
+    public String getPathTranslated() {
+        return null;
+    }
+
+    @Override
+    public String getContextPath() {
+        return contentPath;
+    }
+
+    @Override
+    public String getQueryString() {
+        return queryString;
+    }
+
+    @Override
+    public String getRemoteUser() {
+        return null;
+    }
+
+    @Override
+    public boolean isUserInRole(String role) {
+        return false;
+    }
+
+    @Override
+    public Principal getUserPrincipal() {
+        return null;
+    }
+
+    @Override
+    public String getRequestedSessionId() {
+        return requestedSessionId;
+    }
+
+    @Override
+    public String getRequestURI() {
+        return requestURI;
+    }
+
+    @Override
+    public StringBuffer getRequestURL() {
+        return null;
+    }
+
+    @Override
+    public String getServletPath() {
+        return null;
+    }
+
+    @Override
+    public HttpSession getSession(boolean create) {
+        return null;
+    }
+
+    @Override
+    public HttpSession getSession() {
+        return null;
+    }
+
+    @Override
+    public boolean isRequestedSessionIdValid() {
+        return false;
+    }
+
+    @Override
+    public boolean isRequestedSessionIdFromCookie() {
+        return false;
+    }
+
+    @Override
+    public boolean isRequestedSessionIdFromURL() {
+        return false;
+    }
+
+    @Override
+    public boolean isRequestedSessionIdFromUrl() {
+        return false;
+    }
+
+    @Override
+    public Object getAttribute(String name) {
+        synchronized (attributes) {
+            return attributes.get(name);
+        }
+    }
+
+    @Override
+    public Enumeration getAttributeNames() {
+        synchronized (attributes){
+            return new Enumerator(attributes.keySet());
+        }
+    }
+
+    @Override
+    public String getCharacterEncoding() {
+        return null;
+    }
+
+    @Override
+    public void setCharacterEncoding(String env) throws UnsupportedEncodingException {
+
+    }
+
+    @Override
+    public int getContentLength() {
+        return this.contentLength;
+    }
+
+    @Override
+    public String getContentType() {
+        return this.contentType;
+    }
+
+    @Override
+    public ServletInputStream getInputStream() throws IOException {
+        if (reader != null)
+            throw new IllegalStateException("getInputStream has been called");
+
+        if (stream == null)
+            stream = createInputStream();
+        return (stream);
+    }
+
+    @Override
+    public String getParameter(String name) {
+        parseParameters();
+        String values[] = (String[]) parameters.get(name);
+        if(values != null)
+            return values[0];
+        else
+            return null;
+    }
+
+    @Override
+    public Enumeration getParameterNames() {
+        parseParameters();
+        return (new Enumerator(parameters.keySet()));
+    }
+
+    @Override
+    public String[] getParameterValues(String name) {
+        parseParameters();
+        String values[] = (String[]) parameters.get(name);
+        if (values != null)
+            return (values);
+        else
+            return null;
+    }
+
+    @Override
+    public Map getParameterMap() {
+        parseParameters();
+        return this.parameters;
+    }
+
+    @Override
+    public String getProtocol() {
+        return this.protocol;
+    }
+
+    @Override
+    public String getScheme() {
+        return null;
+    }
+
+    @Override
+    public String getServerName() {
+        return this.serverName;
+    }
+
+    @Override
+    public int getServerPort() {
+        return this.serverPort;
+    }
+
+    @Override
+    public BufferedReader getReader() throws IOException {
+        if (stream != null)
+            throw new IllegalStateException("getInputStream has been called.");
+        if (reader == null) {
+            String encoding = getCharacterEncoding();
+            if (encoding == null)
+                encoding = "ISO-8859-1";
+            InputStreamReader isr =
+                    new InputStreamReader(createInputStream(), encoding);
+            reader = new BufferedReader(isr);
+        }
+        return (reader);
+    }
+
+    @Override
+    public String getRemoteAddr() {
+        return null;
+    }
+
+    @Override
+    public String getRemoteHost() {
+        return null;
+    }
+
+    @Override
+    public void setAttribute(String name, Object o) {
+
+    }
+
+    @Override
+    public void removeAttribute(String name) {
+
+    }
+
+    @Override
+    public Locale getLocale() {
+        return null;
+    }
+
+    @Override
+    public Enumeration getLocales() {
+        return null;
+    }
+
+    @Override
+    public boolean isSecure() {
+        return false;
+    }
+
+    @Override
+    public RequestDispatcher getRequestDispatcher(String path) {
+        return null;
+    }
+
+    @Override
+    public String getRealPath(String path) {
+        return null;
+    }
+
+    @Override
+    public int getRemotePort() {
+        return 0;
+    }
+
+    @Override
+    public String getLocalName() {
+        return null;
+    }
+
+    @Override
+    public String getLocalAddr() {
+        return null;
+    }
+
+    @Override
+    public int getLocalPort() {
+        return 0;
+    }
+}

@@ -1,9 +1,9 @@
 package com.ligoo;
 
+import com.ligoo.connector.http.*;
+
 import javax.servlet.Servlet;
 import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
@@ -23,8 +23,8 @@ public class ServletProcessor {
     * @param:
     * @return:
     */
-    public void process(Request request, Response response){
-        String uri = request.getUri();
+    public void process(HttpRequest request, HttpResponse response){
+        String uri = request.getRequestURI();
         String servletName = uri.substring(uri.lastIndexOf("/") + 1);
         URLClassLoader classLoader = null;
         try {
@@ -43,11 +43,14 @@ public class ServletProcessor {
             e.printStackTrace();
         }
         Servlet servlet = null;
-        RequestFacade requestFacade = new RequestFacade(request);
-        ResponseFacade responseFacade = new ResponseFacade(response);
+       /* RequestFacade requestFacade = new RequestFacade(request);
+        ResponseFacade responseFacade = new ResponseFacade(response);*/
         try {
             servlet = (Servlet) clazz.newInstance();
-            servlet.service((ServletRequest) requestFacade,(ServletResponse) responseFacade);
+            HttpRequestFacade requestFacade = new HttpRequestFacade(request);
+            HttpResponseFacade responseFacade = new HttpResponseFacade(response);
+            servlet.service(requestFacade,responseFacade);
+            response.finishResponse();
         } catch (InstantiationException e) {
             e.printStackTrace();
         } catch (IllegalAccessException e) {
